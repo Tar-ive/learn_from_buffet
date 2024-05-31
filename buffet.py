@@ -1,10 +1,12 @@
 import os
 import streamlit as st
+from st_audiorec import st_audiorec
 import google.generativeai as genai
 from elevenlabs import save, stream
 from elevenlabs.client import ElevenLabs
 from dotenv import load_dotenv
 from subprocess import run
+import tempfile
 
 # Add the path to MPV if it's not in the system PATH
 os.environ['PATH'] += os.pathsep + r'C:\Users\LENOVO\Downloads\bootstrapper'  # Replace with your actual path to the directory containing mpv.exe
@@ -87,32 +89,33 @@ class PublicSpeakingCoach:
 
 
 def main():
-    st.title("Learn from Buffet")
+    st.title("Learn from Buffett")
     coach = PublicSpeakingCoach()
 
     def add_message(sender, message):
+        if 'conversation' not in st.session_state:
+            st.session_state.conversation = []
         st.session_state.conversation.append((sender, message))
 
     def display_conversation():
-        for sender, message in st.session_state.conversation:
-            if sender == "user":
-                st.markdown(f"<div style='text-align: right; background-color: #DCF8C6; color: #000000; padding: 10px; border-radius: 10px; margin-bottom: 5px; max-width: 60%; word-wrap: break-word; float: right;'>{message}</div><div style='clear: both;'></div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div style='text-align: left; background-color: #FFFFFF; color: #000000; padding: 10px; border-radius: 10px; margin-bottom: 5px; max-width: 60%; word-wrap: break-word; float: left; border: 1px solid #EDEDED;'>{message}</div><div style='clear: both;'></div>", unsafe_allow_html=True)
-
-    if 'conversation' not in st.session_state:
-        st.session_state.conversation = []
+        if 'conversation' in st.session_state:
+            for sender, message in st.session_state.conversation:
+                if sender == "user":
+                    st.markdown(f"<div style='text-align: right; background-color: #DCF8C6; color: #000000; padding: 10px; border-radius: 10px; margin-bottom: 5px; max-width: 60%; word-wrap: break-word; float: right;'>{message}</div><div style='clear: both;'></div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='text-align: left; background-color: #FFFFFF; color: #000000; padding: 10px; border-radius: 10px; margin-bottom: 5px; max-width: 60%; word-wrap: break-word; float: left; border: 1px solid #EDEDED;'>{message}</div><div style='clear: both;'></div>", unsafe_allow_html=True)
 
     display_conversation()
 
     st.markdown("---")
 
-    user_input = st.text_input("Ask Buffet ...", key="user_input")
+    user_input = st.text_input("Ask Buffett...", key="user_input")
     uploaded_file = st.file_uploader("Or upload an audio file", type=["mp3"])
+    wav_audio_data = st_audiorec()
 
     if st.button("Get Advice!"):
-        if user_input:
-            add_message("user", user_input)
+        if user_input or uploaded_file or wav_audio_data:
+            add_message("user", user_input if user_input else "Audio message")
             audio_analysis = None
             audio_transcript = None
 
@@ -124,10 +127,17 @@ def main():
                     f.write(uploaded_file.getbuffer())
 
                 audio_file = coach.upload_audio(save_path)
-                # audio_transcript = coach.get_transcript(audio_file)
                 audio_analysis = coach.analyze_audio(audio_file)
 
-            ai_response = coach.send_message(user_input, audio_analysis=audio_analysis, audio_transcript=None)
+            elif wav_audio_data is not None:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio_file:
+                    temp_audio_file.write(wav_audio_data)
+                    temp_audio_file_path = temp_audio_file.name
+
+                audio_file = coach.upload_audio(temp_audio_file_path)
+                audio_analysis = coach.analyze_audio(audio_file)
+
+            ai_response = coach.send_message(user_input if user_input else "Audio message", audio_analysis=audio_analysis, audio_transcript=None)
             add_message("ai", ai_response)
 
             audio_stream = elevenlabs_client.generate(
@@ -140,8 +150,8 @@ def main():
             st.rerun()  # Rerun to immediately display the new conversation messages
 
     if st.button("You show me how!"):
-        if user_input:
-            add_message("user", user_input)
+        if user_input or uploaded_file or wav_audio_data:
+            add_message("user", user_input if user_input else "Audio message")
             audio_analysis = None
             audio_transcript = None
 
@@ -154,11 +164,28 @@ def main():
 
                 audio_file = coach.upload_audio(save_path)
                 audio_transcript = coach.get_transcript(audio_file)
-                # audio_analysis = coach.analyze_audio(audio_file)
 
                 ai_response = coach.show_me_how(user_input, audio_transcript=audio_transcript)
                 add_message("ai", ai_response)
-                print(ai_response)
+
+                audio_stream = elevenlabs_client.generate(
+                    text=ai_response.replace("*", ""),
+                    voice='Ew2jx7kmx9hqMZFkIXaj',
+                    stream=True
+                )
+                stream(audio_stream)
+
+            elif wav_audio_data is not None:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio_file:
+                    temp_audio_file.write(wav_audio_data)
+                    temp_audio_file_path = temp_audio_file.name
+
+                audio_file = coach.upload_audio(temp_audio_file_path)
+                audio_transcript = coach.get_transcript(audio_file)
+
+                ai_response = coach.show_me_how(user_input, audio_transcript=audio_transcript)
+                add_message("ai", ai_response)
+
                 audio_stream = elevenlabs_client.generate(
                     text=ai_response.replace("*", ""),
                     voice='Ew2jx7kmx9hqMZFkIXaj',
